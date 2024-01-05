@@ -1,7 +1,7 @@
 """
 COBRA FBA Process
 """
-from process_bigraph import Process, Step, Composite, process_registry
+from process_bigraph import Process, Step, Composite, process_registry, pf
 from cobra.io import read_sbml_model
 # from cobra_process.library import pf
 
@@ -19,22 +19,22 @@ class CobraProcess(Process):
         self.objective = self.model.objective
         self.boundary = self.model.boundary
 
-    def initial_state(self):
-        solution = self.model.optimize()
-        optimized_fluxes = solution.fluxes
-
-        state = {'fluxes': {}, 'reaction_bounds': {}}
-        for reaction in self.model.reactions:
-            state['fluxes'][reaction.id] = optimized_fluxes[reaction.id]
-            state['reaction_bounds'][reaction.id] = {
-                'lower_bound': reaction.lower_bound,
-                'upper_bound': reaction.upper_bound}
-        return state
+    # def initial_state(self):
+    #     solution = self.model.optimize()
+    #     optimized_fluxes = solution.fluxes
+    #
+    #     state = {'fluxes': {}, 'reaction_bounds': {}}
+    #     for reaction in self.model.reactions:
+    #         state['fluxes'][reaction.id] = optimized_fluxes[reaction.id]
+    #         state['reaction_bounds'][reaction.id] = {
+    #             'lower_bound': reaction.lower_bound,
+    #             'upper_bound': reaction.upper_bound}
+    #     return state
 
     def schema(self):
         return {
             'inputs': {
-                # 'model': 'fbamodel',  #TODO -- how to specify a model type?
+                'model': 'string',  # 'fbamodel',  # TODO -- add an sbml model type
                 'reaction_bounds': {  # TODO -- this needs to be a type that can change number of reactions
                     reaction.id: {
                         'lower_bound': 'float',
@@ -69,7 +69,7 @@ class CobraProcess(Process):
             self.model.reactions.get_by_id(reaction_id).bounds = (bounds['lower_bound'], bounds['upper_bound'])
 
         # set objective
-        self.model.objective = self.model.reactions.get_by_id(state['objective'])
+        self.model.objective = self.model.reactions.get_by_id(state['objective_reaction'])
 
         # run solver
         solution = self.model.optimize()
@@ -93,11 +93,12 @@ def test_process():
             '_type': 'process',
             'address': 'local:cobra',
             'config': {
-                'model_file': 'cobra_process/models/e_coli_core.xml'
+                'model_file': '../models/e_coli_core.xml'
             },
             'inputs': {
                 'model': ['model_store'],
                 'reaction_bounds': ['reaction_bounds_store'],
+                'objective_reaction': ['objective_reaction_store'],
             },
             'outputs': {
                 'fluxes': ['fluxes_store'],
