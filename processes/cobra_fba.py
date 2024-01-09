@@ -2,8 +2,47 @@
 COBRA FBA Process
 """
 from process_bigraph import Process, Step, Composite, process_registry, pf
+from process_bigraph import types as core
 from cobra.io import read_sbml_model
-# from cobra_process.library import pf
+from library.add_emitter import get_emitter_schema
+
+
+bounds_type = {
+    'lower_bound': {'_type': 'float', 'default': -1000.0},
+    'upper_bound': {'_type': 'float', 'default': 1000.0},
+}
+bounds_tree_type = {
+    '_type': 'tree[bounds]',  # TODO -- make this a dict, to make it only one level deep
+}
+sbml_type = {
+    '_type': 'string',
+    '_check': 'check_sbml',
+}
+
+
+def check_sbml(value, bindings, types):
+    # Do something to check that the value is a valid SBML file
+    return True
+
+
+# register
+core.type_registry.register('bounds', bounds_type)
+core.type_registry.register('sbml', sbml_type)
+core.check_registry.register('check_sbml', check_sbml)
+
+
+# def apply_bounds(value):
+#     return value
+#
+# types.type_registry.register('bounds', bounds_type)
+# types.apply_registry.register('apply_bounds', apply_bounds)
+
+# # a reaction is a tree of bounds
+# # dynamic reactions allow the number of reactions to change
+# dynamic_reactions_type = {
+#     '_type': 'tree',
+# }
+# types.register('dynamic_reactions', dynamic_reactions_type)
 
 
 class CobraProcess(Process):
@@ -36,10 +75,7 @@ class CobraProcess(Process):
             'inputs': {
                 'model': 'string',  # 'fbamodel',  # TODO -- add an sbml model type
                 'reaction_bounds': {  # TODO -- this needs to be a type that can change number of reactions
-                    reaction.id: {
-                        'lower_bound': 'float',
-                        'upper_bound': 'float'
-                    } for reaction in self.reactions
+                    reaction.id: 'bounds' for reaction in self.reactions
                 },
                 'objective_reaction': {
                     '_type': 'string',
@@ -61,15 +97,15 @@ class CobraProcess(Process):
             }
         }
 
-    def update(self, state, interval):
+    def update(self, inputs, interval):
 
         # set reaction bounds
-        reaction_bounds = state['reaction_bounds']
+        reaction_bounds = inputs['reaction_bounds']
         for reaction_id, bounds in reaction_bounds.items():
             self.model.reactions.get_by_id(reaction_id).bounds = (bounds['lower_bound'], bounds['upper_bound'])
 
         # set objective
-        self.model.objective = self.model.reactions.get_by_id(state['objective_reaction'])
+        self.model.objective = self.model.reactions.get_by_id(inputs['objective_reaction'])
 
         # run solver
         solution = self.model.optimize()
@@ -87,13 +123,15 @@ process_registry.register('cobra', CobraProcess)
 
 
 def test_process():
+    emitter_schema = get_emitter_schema(target_path=['fluxes_store'])
 
+    # make the instance
     instance = {
         'fba': {
             '_type': 'process',
             'address': 'local:cobra',
             'config': {
-                'model_file': '../models/e_coli_core.xml'
+                'model_file': 'models/e_coli_core.xml'
             },
             'inputs': {
                 'model': ['model_store'],
@@ -107,24 +145,8 @@ def test_process():
                 'metabolite_dual_values': ['metabolite_dual_values_store'],
             }
         },
-        # 'emitter': {
-        #     '_type': 'step',
-        #     'address': 'local:ram-emitter',
-        #     'config': {
-        #         'ports': {
-        #             'inputs': {
-        #                 'fluxes': 'tree[float]',
-        #                 'objective_value': 'tree[float]'
-        #             }
-        #         }
-        #     },
-        #     'wires': {
-        #         'inputs': {
-        #             'fluxes': ['fluxes_store'],
-        #             'objective_value': ['objective_value_store']
-        #         }
-        #     }
-        # }
+        # insert emitter schema
+        **emitter_schema
     }
 
     # make the composite
