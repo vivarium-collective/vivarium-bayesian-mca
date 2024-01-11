@@ -1,6 +1,7 @@
 """
 COBRA FBA Process
 """
+import cobra.io
 from process_bigraph import Process, Step, Composite, process_registry, pf
 from process_bigraph import types as core
 from cobra.io import read_sbml_model
@@ -8,6 +9,13 @@ from library.add_emitter import get_emitter_schema
 
 
 # define new types
+# predicate_type = {}  # TODO
+# constraint_type = {}  # TODO
+# inequality_constraint_type = {
+#     '_super': 'constraint',
+#     '_check': 'check_inequality_constraint'
+# }
+
 bounds_type = {
     'lower_bound': {'_type': 'float', '_default': -1000.0},
     'upper_bound': {'_type': 'float', '_default': 1000.0},
@@ -24,22 +32,24 @@ sbml_type = {
 # define new type methods
 def check_sbml(value, bindings, types):
     # Do something to check that the value is a valid SBML file
-    return True
+    # model = cobra.io.sbml.validate_sbml_model(value) TODO -- this requires XML
+    model = cobra.io.load_json_model(value)
+    if model:
+        return True
+    else:
+        return False
 
 
 # register new types
 core.type_registry.register('bounds', bounds_type)
 core.type_registry.register('sbml', sbml_type)
 core.check_registry.register('check_sbml', check_sbml)
+core.check_registry.register('bounds_tree', bounds_tree_type)
 
 
 class CobraProcess(Process):
     config_schema = {
-        'model_file': 'string',
-        'default_objective': {
-            '_type': 'string',
-            '_default': 'BIOMASS_Ecoli_core_w_GAM'
-        },
+        'model_file': 'sbml',
     }
 
     def __init__(self, config=None):
@@ -47,7 +57,7 @@ class CobraProcess(Process):
         self.model = read_sbml_model(self.config['model_file'])
         self.reactions = self.model.reactions
         self.metabolites = self.model.metabolites
-        self.objective = self.model.objective
+        self.objective = self.model.objective.to_json()['expression']['args'][0]['args'][1]['name']  # TODO -- fix this in cobra
         self.boundary = self.model.boundary
 
     def initial_state(self):
@@ -73,13 +83,13 @@ class CobraProcess(Process):
     def schema(self):
         return {
             'inputs': {
-                'model': 'string',  # 'fbamodel',  # TODO -- add an sbml model type
-                'reaction_bounds': {  # TODO -- this needs to be a type that can change number of reactions
+                'model': 'sbml',
+                'reaction_bounds': {
                     reaction.id: 'bounds' for reaction in self.reactions
                 },
                 'objective_reaction': {
                     '_type': 'string',
-                    '_default': self.config['default_objective'],
+                    '_default': self.objective
                 },
             },
             'outputs': {
@@ -105,6 +115,7 @@ class CobraProcess(Process):
             self.model.reactions.get_by_id(reaction_id).bounds = (bounds['lower_bound'], bounds['upper_bound'])
 
         # set objective
+        # TODO -- look into optlang for specifying objective and constraints
         self.model.objective = self.model.reactions.get_by_id(inputs['objective_reaction'])
 
         # run solver
@@ -129,7 +140,7 @@ def test_process():
     instance = {
         'fba': {
             '_type': 'process',
-            'address': 'local:cobra',
+            'address': 'local:cobra',  # TODO 'biosimulators:cobra[1.0]'
             'config': {
                 'model_file': 'models/e_coli_core.xml'
             },
@@ -143,6 +154,7 @@ def test_process():
                 'objective_value': ['objective_value_store'],
                 'reaction_dual_values': ['reaction_dual_values_store'],
                 'metabolite_dual_values': ['metabolite_dual_values_store'],
+                'status': ['status_store'],
             }
         },
         # insert emitter schema
