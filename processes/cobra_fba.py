@@ -3,7 +3,7 @@ COBRA FBA Process
 """
 import cobra.io
 from process_bigraph import Process, Step, Composite, process_registry, pf
-from process_bigraph import types as core
+from process_bigraph import core
 from cobra.io import read_sbml_model
 from library.add_emitter import get_emitter_schema
 
@@ -16,6 +16,16 @@ from library.add_emitter import get_emitter_schema
 #     '_check': 'check_inequality_constraint'
 # }
 
+def check_sbml(state, bindings, core):
+    # Do something to check that the value is a valid SBML file
+    valid = cobra.io.sbml.validate_sbml_model(state)  # TODO -- this requires XML
+    # valid = cobra.io.load_json_model(value)
+    if valid:
+        return True
+    else:
+        return False
+
+
 bounds_type = {
     'lower_bound': {'_type': 'float', '_default': -1000.0},
     'upper_bound': {'_type': 'float', '_default': 1000.0},
@@ -25,26 +35,21 @@ bounds_tree_type = {
 }
 sbml_type = {
     '_type': 'string',
-    '_check': 'check_sbml',
+    '_check': check_sbml,
+    '_apply': 'set',
 }
 
-
-# define new type methods
-def check_sbml(value, bindings, types):
-    # Do something to check that the value is a valid SBML file
-    # model = cobra.io.sbml.validate_sbml_model(value) TODO -- this requires XML
-    model = cobra.io.load_json_model(value)
-    if model:
-        return True
-    else:
-        return False
-
-
 # register new types
-core.type_registry.register('bounds', bounds_type)
-core.type_registry.register('sbml', sbml_type)
-core.check_registry.register('check_sbml', check_sbml)
-core.check_registry.register('bounds_tree', bounds_tree_type)
+core.register('bounds', bounds_type)
+core.register('sbml', sbml_type)
+
+
+def apply_accumulate_nonnegative(current, update, bindings, core):
+    new_state = current + update
+    if new_state < 0:
+        return 0
+    else:
+        return new_state
 
 
 class CobraProcess(Process):
@@ -134,13 +139,14 @@ process_registry.register('cobra', CobraProcess)
 
 
 def test_process():
-    emitter_schema = get_emitter_schema(target_path=['fluxes_store'])
+    emitter_schema = get_emitter_schema(target_path=['fluxes_store'], emit_keys=['data'])
 
     # make the instance
     instance = {
+        'model_store': {'_type': 'float'},   # TODO: This should fail
         'fba': {
             '_type': 'process',
-            'address': 'local:cobra',  # TODO 'biosimulators:cobra[1.0]'
+            'address': 'local:cobra',  # TODO 'biosimulators:cobra[1.0]',
             'config': {
                 'model_file': 'models/e_coli_core.xml'
             },
@@ -165,7 +171,7 @@ def test_process():
     workflow = Composite({'state': instance})
 
     # run
-    workflow.run(1)
+    workflow.run(10)
 
     # gather results
     results = workflow.gather_results()
